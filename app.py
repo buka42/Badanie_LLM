@@ -16,7 +16,7 @@ PROVIDERS = {
     },
     "Grok (xAI)": {
         "models": ["grok-2-latest", "grok-3-latest"],
-        "base_url": "https://api.xai.com/v1",
+        "base_url": "https://api.x.ai/v1",
         "api_key_env": "XAI_API_KEY",
     },
     "DeepSeek": {
