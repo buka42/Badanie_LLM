@@ -10,17 +10,36 @@ st.title("LLM MultiChat")
 
 PROVIDERS = {
     "OpenAI": {
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o3-mini"],
+        "models": [
+            "o3-pro",
+            "o3",
+            "o3-mini",
+            "o4-mini",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
+            "gpt-4o",
+            "gpt-4o-mini",
+        ],
         "base_url": None,
         "api_key_env": "OPENAI_API_KEY",
     },
     "Grok (xAI)": {
-        "models": ["grok-2-latest", "grok-3-latest"],
+        "models": [
+            "grok-3",
+            "grok-3-fast",
+            "grok-3-mini",
+            "grok-3-mini-fast",
+            "grok-2-latest",
+        ],
         "base_url": "https://api.x.ai/v1",
         "api_key_env": "XAI_API_KEY",
     },
     "DeepSeek": {
-        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "models": [
+            "deepseek-chat",
+            "deepseek-reasoner",
+        ],
         "base_url": "https://api.deepseek.com",
         "api_key_env": "DEEPSEEK_API_KEY",
     },
