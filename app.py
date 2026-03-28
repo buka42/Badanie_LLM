@@ -83,9 +83,22 @@ if prompt := st.chat_input("Napisz wiadomość…"):
                 temperature=temperature,
                 stream=True,
             )
-            response = st.write_stream(stream)
+            placeholder = st.empty()
+            full_response = ""
+            for chunk in stream:
+                token = chunk.choices[0].delta.content if chunk.choices[0].delta.content else ""
+                full_response += token
+                placeholder.markdown(full_response + "▌")
+            placeholder.markdown(full_response)
+            response = full_response
         except Exception as e:
-            response = f"**Błąd API:** {e}"
+            error_msg = str(e)
+            if "429" in error_msg or "insufficient_quota" in error_msg:
+                response = "⚠️ Brak środków na koncie OpenAI. Doładuj konto: https://platform.openai.com/account/billing"
+            elif "402" in error_msg or "Insufficient Balance" in error_msg:
+                response = "⚠️ Brak środków na koncie DeepSeek. Doładuj konto: https://platform.deepseek.com/top_up"
+            else:
+                response = f"**Błąd API:** {e}"
             st.error(response)
 
     st.session_state["messages"].append({"role": "assistant", "content": response})
