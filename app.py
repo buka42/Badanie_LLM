@@ -11,26 +11,14 @@ st.title("LLM MultiChat")
 PROVIDERS = {
     "OpenAI": {
         "models": [
-            "o3-pro",
-            "o3",
-            "o3-mini",
-            "o4-mini",
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-4.1-nano",
-            "gpt-4o",
-            "gpt-4o-mini",
+            "GPT-5.4",
         ],
         "base_url": None,
         "api_key_env": "OPENAI_API_KEY",
     },
     "Grok (xAI)": {
         "models": [
-            "grok-3",
-            "grok-3-fast",
-            "grok-3-mini",
-            "grok-3-mini-fast",
-            "grok-2-latest",
+            "grok-4.20-multi-agent-0309",
         ],
         "base_url": "https://api.x.ai/v1",
         "api_key_env": "XAI_API_KEY",
