@@ -130,6 +130,9 @@ with st.sidebar:
              "If left empty, names start with the provider (chatgpt/gemini/grok).",
     ).strip()
 
+    st.divider()
+    st.caption(f"Build: {core.APP_BUILD}")
+
 # Resolve the actual model id to send.
 active_model = custom_model or model
 

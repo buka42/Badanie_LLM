@@ -21,6 +21,11 @@ except ImportError:  # pragma: no cover - depends on optional dependency
 
 
 # --- Configuration ---
+# Bump this when changing behaviour so users can confirm they run the latest
+# file (shown at the bottom of the sidebar). If you don't see it, your local
+# copy is stale.
+APP_BUILD = "2026-06-30.7 (no response_format)"
+
 PROVIDERS = {
     "OpenAI": {
         "models": ["gpt-image-2", "dall-e-3", "dall-e-2"],
