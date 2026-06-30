@@ -113,15 +113,13 @@ def generate_openai(api_key, model, prompt, n, size, quality):
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key)
+    # NOTE: we never send response_format. gpt-image models reject it (400
+    # "Unknown parameter: 'response_format'"), while dall-e models return a URL
+    # by default — decode_image_item handles both base64 and URL responses.
     kwargs = {"model": model, "prompt": prompt, "n": n, "size": size}
-    if model.startswith("gpt-image"):
-        # gpt-image models always return base64 and reject response_format.
+    if model.startswith("gpt-image") or model == "dall-e-3":
+        # dall-e-2 does not accept a quality parameter.
         kwargs["quality"] = quality
-    elif model == "dall-e-3":
-        kwargs["quality"] = quality
-        kwargs["response_format"] = "b64_json"
-    else:  # dall-e-2 (no quality parameter)
-        kwargs["response_format"] = "b64_json"
     result = client.images.generate(**kwargs)
     images = [decode_image_item(d) for d in result.data]
     meta = {
@@ -136,9 +134,7 @@ def generate_grok(api_key, model, prompt, n):
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
-    result = client.images.generate(
-        model=model, prompt=prompt, n=n, response_format="b64_json"
-    )
+    result = client.images.generate(model=model, prompt=prompt, n=n)
     images = [decode_image_item(d) for d in result.data]
     meta = {
         "created": getattr(result, "created", None),
