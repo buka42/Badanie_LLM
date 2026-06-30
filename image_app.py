@@ -3,7 +3,9 @@ import streamlit.components.v1 as components
 from dotenv import load_dotenv
 import os
 import json
+import time
 import html as html_lib
+from datetime import datetime, timezone
 
 import image_core as core
 
@@ -139,9 +141,11 @@ if st.button("Generate", type="primary", use_container_width=True):
     if not prompt.strip():
         st.warning("Please enter a prompt.")
     else:
+        run_started_at = datetime.now(timezone.utc).isoformat()
         proceed = True
         image_prompt = prompt
         reasoning_summary = ""
+        think_seconds = None
 
         # Optional thinking step: refine the prompt with an OpenAI reasoning model.
         # Failures here are reported but never break the standard generation flow.
@@ -153,11 +157,13 @@ if st.button("Generate", type="primary", use_container_width=True):
                 proceed = False
             else:
                 with st.spinner("🧠 Thinking about the best prompt…"):
+                    t0 = time.monotonic()
                     try:
                         refined, reasoning_summary = core.refine_image_prompt(
                             openai_key, prompt, effort=effort
                         )
                         image_prompt = refined or prompt
+                        think_seconds = round(time.monotonic() - t0, 2)
                     except Exception as e:
                         st.error("🧠 OpenAI thinking failed: " + core.friendly_error(e))
                         proceed = False
@@ -166,18 +172,59 @@ if st.button("Generate", type="primary", use_container_width=True):
             with st.spinner(f"Generating with {active_model}…"):
                 try:
                     if provider == "OpenAI":
-                        images = core.generate_openai(api_key, active_model, image_prompt, n, size, quality)
+                        images, provider_meta = core.generate_openai(
+                            api_key, active_model, image_prompt, n, size, quality)
                     elif provider == "Gemini (Google)":
-                        images = core.generate_gemini(api_key, active_model, image_prompt, n, aspect_ratio)
+                        images, provider_meta = core.generate_gemini(
+                            api_key, active_model, image_prompt, n, aspect_ratio)
                     else:
-                        images = core.generate_grok(api_key, active_model, image_prompt, n)
+                        images, provider_meta = core.generate_grok(
+                            api_key, active_model, image_prompt, n)
+
+                    run_completed_at = datetime.now(timezone.utc).isoformat()
+
+                    # Build downloadable run metadata from API-sourced data.
+                    parameters = {"number_of_images": n}
+                    if provider == "OpenAI":
+                        parameters.update({"size": size, "quality": quality})
+                    elif provider == "Gemini (Google)" and active_model.startswith("imagen"):
+                        parameters["aspect_ratio"] = aspect_ratio
+
+                    if thinking_mode:
+                        reasoning_meta = {
+                            "enabled": True,
+                            "model": core.get_thinking_model(),
+                            "effort": effort,
+                            "summary": reasoning_summary or None,
+                            "summary_available": bool(reasoning_summary),
+                            "duration_seconds": think_seconds,
+                            "note": "Only the official reasoning summary is exposed by the API; "
+                                    "raw chain-of-thought is never returned.",
+                        }
+                    else:
+                        reasoning_meta = {"enabled": False}
+
+                    metadata = core.build_metadata(
+                        prompt={"user_prompt": prompt, "final_prompt_used": image_prompt},
+                        provider=provider,
+                        model=active_model,
+                        parameters=parameters,
+                        images=images,
+                        run_started_at=run_started_at,
+                        run_completed_at=run_completed_at,
+                        reasoning=reasoning_meta,
+                        provider_response=provider_meta,
+                    )
 
                     st.session_state["images"] = images
                     st.session_state["last_prompt"] = image_prompt
                     st.session_state["reasoning_summary"] = reasoning_summary
                     st.session_state["thinking_used"] = bool(thinking_mode)
+                    st.session_state["metadata_json"] = json.dumps(
+                        metadata, indent=2, ensure_ascii=False)
                 except Exception as e:
                     st.session_state["images"] = []
+                    st.session_state["metadata_json"] = None
                     st.error(core.friendly_error(e))
 
 # --- Render results (kept in session_state so downloads don't clear them) ---
@@ -206,3 +253,17 @@ if images:
             render_copyable(summary)
         else:
             st.info("Brak dostępnego podsumowania rozumowania dla tej odpowiedzi.")
+
+    # Downloadable run metadata (API-sourced; analogous to the browser export).
+    metadata_json = st.session_state.get("metadata_json")
+    if metadata_json:
+        st.subheader("📄 Run metadata")
+        st.download_button(
+            "⬇️ Download metadata (JSON)",
+            data=metadata_json.encode("utf-8"),
+            file_name="image_generation_metadata.json",
+            mime="application/json",
+            key="dl_meta",
+        )
+        with st.expander("Preview metadata"):
+            st.code(metadata_json, language="json")

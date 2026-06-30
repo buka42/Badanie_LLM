@@ -6,9 +6,15 @@ network access. Fake response objects mimic the OpenAI Responses API shape.
 """
 
 import base64
+import struct
 from types import SimpleNamespace
 
 import image_core as core
+
+
+def _make_png(width, height):
+    return (b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR"
+            + struct.pack(">II", width, height) + b"\x00" * 8)
 
 
 # --- Config (env-driven, with fallbacks) ---
@@ -147,3 +153,69 @@ def test_friendly_error_quota():
 
 def test_friendly_error_timeout():
     assert "timed out" in core.friendly_error(Exception("Request timeout"))
+
+
+# --- Image info (content type / size / dimensions) ---
+def test_image_info_png():
+    png = _make_png(1448, 1086)
+    info = core.image_info(png)
+    assert info["content_type"] == "image/png"
+    assert info["width"] == 1448
+    assert info["height"] == 1086
+    assert info["size_bytes"] == len(png)
+
+
+def test_image_info_unknown_format():
+    info = core.image_info(b"not-an-image")
+    assert info["content_type"] == "application/octet-stream"
+    assert info["width"] is None and info["height"] is None
+    assert info["size_bytes"] == len(b"not-an-image")
+
+
+# --- Run metadata assembly ---
+def test_build_metadata_structure():
+    png = _make_png(1024, 768)
+    md = core.build_metadata(
+        prompt={"user_prompt": "a cat", "final_prompt_used": "a fluffy cat"},
+        provider="OpenAI",
+        model="gpt-image-2",
+        parameters={"number_of_images": 1, "size": "1024x1024", "quality": "high"},
+        images=[png],
+        run_started_at="2026-06-30T08:45:43+00:00",
+        run_completed_at="2026-06-30T08:47:23+00:00",
+        reasoning={"enabled": True, "effort": "high", "summary": "considered lighting"},
+        provider_response={"usage": {"total_tokens": 42}, "revised_prompt": "a fluffy cat"},
+    )
+
+    assert md["schema_name"] == core.METADATA_SCHEMA_NAME
+    assert md["source"] == "official_api"
+    assert md["provider"] == "OpenAI" and md["model"] == "gpt-image-2"
+    assert md["prompt"]["final_prompt_used"] == "a fluffy cat"
+    assert md["images"][0]["width"] == 1024 and md["images"][0]["height"] == 768
+    assert md["reasoning"]["effort"] == "high"
+    assert md["provider_response"]["usage"]["total_tokens"] == 42
+    # The browser-only gap is documented in the export.
+    assert isinstance(md["not_available_from_api"], list) and md["not_available_from_api"]
+
+
+def test_build_metadata_defaults_reasoning_disabled():
+    md = core.build_metadata(
+        prompt={"user_prompt": "x", "final_prompt_used": "x"},
+        provider="Grok (xAI)",
+        model="grok-2-image-1212",
+        parameters={"number_of_images": 1},
+        images=[],
+        run_started_at="a",
+        run_completed_at="b",
+    )
+    assert md["reasoning"] == {"enabled": False}
+    assert md["images"] == []
+
+
+def test_as_dict_handles_model_dump():
+    obj = SimpleNamespace(model_dump=lambda: {"total_tokens": 7})
+    assert core._as_dict(obj) == {"total_tokens": 7}
+
+
+def test_as_dict_none():
+    assert core._as_dict(None) is None

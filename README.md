@@ -111,6 +111,25 @@ Aby zatrzymać aplikację, wciśnij `Ctrl + C` w terminalu.
 
 ---
 
+## Metadane przebiegu (pobieranie JSON)
+
+Po wygenerowaniu obrazu w `image_app.py` pojawia się sekcja **📄 Run metadata**
+z przyciskiem **„Download metadata (JSON)"**. Plik zawiera dane pochodzące
+**z oficjalnego API** (nie ze scrapowania przeglądarki):
+
+- prompt użytkownika i finalny prompt użyty do generacji,
+- dostawca, model, parametry (rozmiar/jakość/aspect ratio/liczba obrazów),
+- znaczniki czasu rozpoczęcia/zakończenia,
+- dane trybu reasoning (model, effort, czas, `reasoning.summary`),
+- informacje o obrazie (typ, rozmiar w bajtach, wymiary w pikselach),
+- `provider_response` (m.in. `usage`/liczba tokenów, `revised_prompt`).
+
+Plik zawiera też pole **`not_available_from_api`** — listę danych, które są
+dostępne **wyłącznie przez scrapowanie interfejsu przeglądarki** i nie mają
+odpowiednika w API (np. podpisany URL CDN, atrybuty DOM, surowy tok myślenia).
+
+---
+
 ## Testy
 
 Logika backendu generatora obrazów (`image_core.py`) jest pokryta testami,

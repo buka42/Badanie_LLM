@@ -7,6 +7,7 @@ inside the functions that need it. The API keys never leave this layer.
 
 import os
 import base64
+import struct
 import urllib.request
 
 # Gemini (Google) uses its own SDK rather than the OpenAI-compatible layer.
@@ -80,6 +81,33 @@ def decode_image_item(item) -> bytes:
     raise ValueError("API response did not contain image data.")
 
 
+def _as_dict(obj):
+    """Best-effort conversion of an SDK object (usage, etc.) to a plain dict."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj
+    for attr in ("model_dump", "to_dict", "dict"):
+        fn = getattr(obj, attr, None)
+        if callable(fn):
+            try:
+                return fn()
+            except Exception:  # pragma: no cover - defensive
+                pass
+    try:
+        return {k: v for k, v in vars(obj).items() if not k.startswith("_")}
+    except TypeError:  # pragma: no cover - non-introspectable object
+        return str(obj)
+
+
+def _first_revised_prompt(data):
+    for d in data:
+        revised = getattr(d, "revised_prompt", None)
+        if revised:
+            return revised
+    return None
+
+
 def generate_openai(api_key, model, prompt, n, size, quality):
     from openai import OpenAI
 
@@ -94,7 +122,13 @@ def generate_openai(api_key, model, prompt, n, size, quality):
     else:  # dall-e-2 (no quality parameter)
         kwargs["response_format"] = "b64_json"
     result = client.images.generate(**kwargs)
-    return [decode_image_item(d) for d in result.data]
+    images = [decode_image_item(d) for d in result.data]
+    meta = {
+        "created": getattr(result, "created", None),
+        "usage": _as_dict(getattr(result, "usage", None)),
+        "revised_prompt": _first_revised_prompt(result.data),
+    }
+    return images, meta
 
 
 def generate_grok(api_key, model, prompt, n):
@@ -104,12 +138,19 @@ def generate_grok(api_key, model, prompt, n):
     result = client.images.generate(
         model=model, prompt=prompt, n=n, response_format="b64_json"
     )
-    return [decode_image_item(d) for d in result.data]
+    images = [decode_image_item(d) for d in result.data]
+    meta = {
+        "created": getattr(result, "created", None),
+        "usage": _as_dict(getattr(result, "usage", None)),
+        "revised_prompt": _first_revised_prompt(result.data),
+    }
+    return images, meta
 
 
 def generate_gemini(api_key, model, prompt, n, aspect_ratio):
     client = genai.Client(api_key=api_key)
     images = []
+    meta = {}
     if model.startswith("imagen"):
         response = client.models.generate_images(
             model=model,
@@ -128,10 +169,11 @@ def generate_gemini(api_key, model, prompt, n, aspect_ratio):
             contents=prompt,
             config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
         )
+        meta["usage"] = _as_dict(getattr(response, "usage_metadata", None))
         for part in response.candidates[0].content.parts:
             if getattr(part, "inline_data", None) is not None:
                 images.append(part.inline_data.data)
-    return images
+    return images, meta
 
 
 # --- Reasoning / thinking mode (OpenAI Responses API) ---
@@ -203,3 +245,105 @@ def friendly_error(e: Exception) -> str:
     if "not found" in low or "does not exist" in low or "not supported" in low or "model_not_found" in low:
         return f"❌ Model not available for your account, or the model ID is wrong. Try the *custom model* field in the sidebar.\n\nDetails: {msg}"
     return f"❌ API error: {msg}"
+
+
+# --- Run metadata (analogous to the browser-scraped JSON, but API-sourced) ---
+METADATA_SCHEMA_NAME = "api_image_generation_metadata"
+METADATA_SCHEMA_VERSION = "0.1"
+
+# Fields present in browser-scraped metadata that have NO equivalent in the
+# official APIs (documented in the exported file so the gap is explicit).
+BROWSER_ONLY_FIELDS = [
+    "page_url",
+    "image.src / current_src (signed CDN content URL)",
+    "backend_params (file_id, sig, ts, cid, ...)",
+    "DOM attributes (class, loading, decoding, client_width/height, style)",
+    "thought_button label (e.g. 'Thought for 1m 19s')",
+    "interface_visible_thinking (raw on-screen thinking text — API exposes only reasoning.summary)",
+    "model / selected intelligence scraped from the UI menu",
+]
+
+
+def _content_type(data: bytes) -> str:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return "application/octet-stream"
+
+
+def _png_size(data: bytes):
+    if len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        width, height = struct.unpack(">II", data[16:24])
+        return width, height
+    return None
+
+
+def _jpeg_size(data: bytes):
+    if data[:2] != b"\xff\xd8":
+        return None
+    i, n = 2, len(data)
+    sof_markers = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                   0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+    while i + 9 < n:
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker in sof_markers:
+            height, width = struct.unpack(">HH", data[i + 5:i + 9])
+            return width, height
+        if marker == 0xD8 or marker == 0xD9 or 0xD0 <= marker <= 0xD7:
+            i += 2
+            continue
+        seg_len = struct.unpack(">H", data[i + 2:i + 4])[0]
+        i += 2 + seg_len
+    return None
+
+
+def image_info(data: bytes) -> dict:
+    """Derive content type, byte size and pixel dimensions from raw bytes.
+
+    Dimensions are parsed from the PNG/JPEG headers (no Pillow dependency);
+    width/height are ``None`` for formats we don't parse.
+    """
+    content_type = _content_type(data)
+    dims = None
+    if content_type == "image/png":
+        dims = _png_size(data)
+    elif content_type == "image/jpeg":
+        dims = _jpeg_size(data)
+    return {
+        "content_type": content_type,
+        "size_bytes": len(data),
+        "width": dims[0] if dims else None,
+        "height": dims[1] if dims else None,
+    }
+
+
+def build_metadata(*, prompt, provider, model, parameters, images,
+                   run_started_at, run_completed_at,
+                   reasoning=None, provider_response=None):
+    """Assemble a downloadable, API-sourced metadata record for one run.
+
+    Timestamps are passed in (ISO strings) so this stays pure/deterministic.
+    """
+    return {
+        "schema_name": METADATA_SCHEMA_NAME,
+        "schema_version": METADATA_SCHEMA_VERSION,
+        "source": "official_api",
+        "run_started_at": run_started_at,
+        "run_completed_at": run_completed_at,
+        "provider": provider,
+        "model": model,
+        "prompt": prompt,
+        "parameters": parameters,
+        "reasoning": reasoning if reasoning is not None else {"enabled": False},
+        "images": [image_info(b) for b in images],
+        "provider_response": provider_response or {},
+        "not_available_from_api": BROWSER_ONLY_FIELDS,
+    }
