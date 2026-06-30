@@ -21,7 +21,7 @@ st.caption("Generate images with OpenAI, Google Gemini, or Grok (xAI) — straig
 
 PROVIDERS = {
     "OpenAI": {
-        "models": ["gpt-image-1", "dall-e-3", "dall-e-2"],
+        "models": ["gpt-image-2"],
         "api_key_env": "OPENAI_API_KEY",
     },
     "Gemini (Google)": {
@@ -60,8 +60,8 @@ def _decode(item) -> bytes:
 def generate_openai(api_key, model, prompt, n, size, quality):
     client = OpenAI(api_key=api_key)
     kwargs = {"model": model, "prompt": prompt, "n": n, "size": size}
-    if model == "gpt-image-1":
-        # gpt-image-1 always returns base64 and rejects response_format.
+    if model.startswith("gpt-image"):
+        # gpt-image models always return base64 and reject response_format.
         kwargs["quality"] = quality
     elif model == "dall-e-3":
         kwargs["quality"] = quality
