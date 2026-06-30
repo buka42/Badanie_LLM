@@ -49,9 +49,33 @@ OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
 XAI_API_KEY=xai-...
 DEEPSEEK_API_KEY=sk-...
+
+# Opcjonalnie – tryb „OpenAI thinking” w generatorze obrazów
+OPENAI_THINKING_MODEL=gpt-5.5
+OPENAI_REASONING_EFFORT=medium
 ```
 
 > **macOS / Linux:** zamiast `copy` użyj `cp .env.example .env`.
+
+---
+
+## Opcjonalny tryb „OpenAI thinking / reasoning” (generator obrazów)
+
+W `image_app.py` w panelu bocznym (sekcja **🧠 Reasoning**) możesz włączyć
+opcjonalny tryb rozumowania. **Domyślnie jest wyłączony** — bez niego aplikacja
+działa dokładnie tak jak dotychczas.
+
+Po zaznaczeniu pola **„OpenAI thinking / reasoning”**:
+- model rozumujący OpenAI (Responses API) najpierw dopracowuje Twój prompt,
+- obraz jest generowany na podstawie dopracowanego promptu,
+- pod obrazem pojawia się sekcja **„Reasoning summary”** z oficjalnym
+  podsumowaniem rozumowania i przyciskiem **Kopiuj**.
+
+Tryb ten jest **wolniejszy i droższy**, wymaga `OPENAI_API_KEY` i jest
+konfigurowalny przez `OPENAI_THINKING_MODEL` (domyślnie `gpt-5.5`) oraz
+`OPENAI_REASONING_EFFORT` (`low` / `medium` / `high`, domyślnie `medium`).
+Wyświetlane jest wyłącznie oficjalne `reasoning.summary` zwrócone przez API —
+nigdy surowy tok rozumowania (OpenAI go nie udostępnia).
 
 ---
 
@@ -84,6 +108,18 @@ Aby zatrzymać aplikację, wciśnij `Ctrl + C` w terminalu.
 | Gemini   | https://aistudio.google.com/app/apikey |
 | Grok (xAI) | https://console.x.ai |
 | DeepSeek | https://platform.deepseek.com/api_keys |
+
+---
+
+## Testy
+
+Logika backendu generatora obrazów (`image_core.py`) jest pokryta testami,
+które nie wymagają kluczy API ani połączenia z siecią:
+
+```powershell
+python -m pip install pytest
+python -m pytest -q
+```
 
 ---
 
