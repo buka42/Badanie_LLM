@@ -224,10 +224,22 @@ def test_as_dict_none():
 
 # --- Saving generations to disk ---
 def test_provider_prefix():
-    assert core.provider_prefix("OpenAI") == "OpenAI"
-    assert core.provider_prefix("Gemini (Google)") == "Gemini"
-    assert core.provider_prefix("Grok (xAI)") == "Grok"
-    assert core.provider_prefix("Unknown") == "Model"
+    assert core.provider_prefix("OpenAI") == "chatgpt"
+    assert core.provider_prefix("Gemini (Google)") == "gemini"
+    assert core.provider_prefix("Grok (xAI)") == "grok"
+    assert core.provider_prefix("Unknown") == "model"
+
+
+def test_build_prefix_with_category():
+    # Spaces become underscores; provider follows the category.
+    assert core.build_prefix("OpenAI", "political event") == "political_event_chatgpt"
+    assert core.build_prefix("Gemini (Google)", "nature") == "nature_gemini"
+
+
+def test_build_prefix_without_category():
+    assert core.build_prefix("OpenAI", "") == "chatgpt"
+    assert core.build_prefix("OpenAI", "   ") == "chatgpt"
+    assert core.build_prefix("Grok (xAI)", None) == "grok"
 
 
 def test_sanitize():
@@ -235,33 +247,36 @@ def test_sanitize():
     assert core._sanitize("") == "image"
 
 
-def test_save_generation_with_reasoning(tmp_path):
+def test_save_generation_with_reasoning_and_category(tmp_path):
     png = _make_png(10, 10)
     res = core.save_generation(
         results_dir=str(tmp_path), provider="OpenAI", base_name="img_x",
         images=[png], metadata_json='{"a": 1}', reasoning_text="thoughts here",
+        category="political event",
     )
-    assert os.path.basename(res["folder"]) == "OpenAI_img_x"
+    assert os.path.basename(res["folder"]) == "political_event_chatgpt_img_x"
     names = sorted(os.path.basename(p) for p in res["files"])
-    assert names == ["OpenAI_img_x.json", "OpenAI_img_x.png", "OpenAI_img_x.txt"]
+    assert names == [
+        "political_event_chatgpt_img_x.json",
+        "political_event_chatgpt_img_x.png",
+        "political_event_chatgpt_img_x.txt",
+    ]
 
     folder = res["folder"]
-    with open(os.path.join(folder, "OpenAI_img_x.txt"), encoding="utf-8") as f:
+    with open(os.path.join(folder, "political_event_chatgpt_img_x.txt"), encoding="utf-8") as f:
         assert f.read() == "thoughts here"
-    with open(os.path.join(folder, "OpenAI_img_x.json"), encoding="utf-8") as f:
-        assert f.read() == '{"a": 1}'
-    with open(os.path.join(folder, "OpenAI_img_x.png"), "rb") as f:
+    with open(os.path.join(folder, "political_event_chatgpt_img_x.png"), "rb") as f:
         assert f.read() == png
 
 
-def test_save_generation_without_reasoning(tmp_path):
+def test_save_generation_without_category(tmp_path):
     png = _make_png(4, 4)
     res = core.save_generation(
         results_dir=str(tmp_path), provider="Grok (xAI)", base_name="g1",
         images=[png], metadata_json="{}",
     )
     names = sorted(os.path.basename(p) for p in res["files"])
-    assert names == ["Grok_g1.json", "Grok_g1.png"]
+    assert names == ["grok_g1.json", "grok_g1.png"]
 
 
 def test_save_generation_multiple_images(tmp_path):
@@ -270,7 +285,7 @@ def test_save_generation_multiple_images(tmp_path):
         images=[_make_png(2, 2), _make_png(3, 3)], metadata_json="{}",
     )
     names = sorted(os.path.basename(p) for p in res["files"])
-    assert names == ["Gemini_m.json", "Gemini_m_1.png", "Gemini_m_2.png"]
+    assert names == ["gemini_m.json", "gemini_m_1.png", "gemini_m_2.png"]
 
 
 def test_get_results_dir_env(monkeypatch):

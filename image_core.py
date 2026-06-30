@@ -328,7 +328,7 @@ def image_info(data: bytes) -> dict:
 
 def build_metadata(*, prompt, provider, model, parameters, images,
                    run_started_at, run_completed_at,
-                   reasoning=None, provider_response=None):
+                   reasoning=None, provider_response=None, category=None):
     """Assemble a downloadable, API-sourced metadata record for one run.
 
     Timestamps are passed in (ISO strings) so this stays pure/deterministic.
@@ -339,6 +339,7 @@ def build_metadata(*, prompt, provider, model, parameters, images,
         "source": "official_api",
         "run_started_at": run_started_at,
         "run_completed_at": run_completed_at,
+        "category": category or None,
         "provider": provider,
         "model": model,
         "prompt": prompt,
@@ -352,9 +353,9 @@ def build_metadata(*, prompt, provider, model, parameters, images,
 
 # --- Saving generations to disk ---
 PROVIDER_PREFIX = {
-    "OpenAI": "OpenAI",
-    "Gemini (Google)": "Gemini",
-    "Grok (xAI)": "Grok",
+    "OpenAI": "chatgpt",
+    "Gemini (Google)": "gemini",
+    "Grok (xAI)": "grok",
 }
 
 _EXT_BY_TYPE = {
@@ -373,8 +374,8 @@ def get_results_dir() -> str:
 
 
 def provider_prefix(provider: str) -> str:
-    """Filename prefix for a provider: OpenAI / Gemini / Grok."""
-    return PROVIDER_PREFIX.get(provider, "Model")
+    """Provider token used in filenames: chatgpt / gemini / grok."""
+    return PROVIDER_PREFIX.get(provider, "model")
 
 
 def _sanitize(name: str) -> str:
@@ -382,22 +383,36 @@ def _sanitize(name: str) -> str:
     return cleaned or "image"
 
 
+def build_prefix(provider: str, category: str = None) -> str:
+    """Filename prefix: ``<category>_<provider>`` or just ``<provider>``.
+
+    Spaces (and other unsafe characters) in the category become underscores.
+    An empty/blank category is omitted, so the name starts with the provider.
+    """
+    token = provider_prefix(provider)
+    if category and str(category).strip():
+        return f"{_sanitize(category)}_{token}"
+    return token
+
+
 def _ext_for(data: bytes) -> str:
     return _EXT_BY_TYPE.get(_content_type(data), ".bin")
 
 
 def save_generation(results_dir, provider, base_name, images, metadata_json,
-                    reasoning_text=None):
-    """Write one generation into ``results_dir/<Prefix>_<base_name>/``.
+                    reasoning_text=None, category=None):
+    """Write one generation into ``results_dir/<prefix>_<base_name>/``.
 
-    Files share the image base name, each prefixed with the provider:
-      - ``<Prefix>_<base>.<ext>`` for the image(s) (indexed when >1),
-      - ``<Prefix>_<base>.json`` for the metadata,
-      - ``<Prefix>_<base>.txt`` for reasoning (only when ``reasoning_text`` set).
+    The prefix is ``<category>_<provider>`` (or just ``<provider>`` when no
+    category is given); the provider token is chatgpt / gemini / grok. Files
+    share the image base name:
+      - ``<prefix>_<base>.<ext>`` for the image(s) (indexed when >1),
+      - ``<prefix>_<base>.json`` for the metadata,
+      - ``<prefix>_<base>.txt`` for reasoning (only when ``reasoning_text`` set).
 
     Returns ``{"folder": <path>, "files": [<path>, ...]}``.
     """
-    prefix = provider_prefix(provider)
+    prefix = build_prefix(provider, category)
     safe_base = _sanitize(base_name)
     stem = f"{prefix}_{safe_base}"
     folder = os.path.join(results_dir, stem)

@@ -123,6 +123,12 @@ with st.sidebar:
         help=f"Saves each generation into its own subfolder of '{core.get_results_dir()}/' "
              "(image + JSON, plus a reasoning .txt when thinking mode is on).",
     )
+    category = st.text_input(
+        "Prompt category (optional)",
+        placeholder="e.g. political event",
+        help="Used as the first part of the file names. Spaces become underscores. "
+             "If left empty, names start with the provider (chatgpt/gemini/grok).",
+    ).strip()
 
 # Resolve the actual model id to send.
 active_model = custom_model or model
@@ -224,6 +230,7 @@ if st.button("Generate", type="primary", use_container_width=True):
                         run_completed_at=run_completed_at,
                         reasoning=reasoning_meta,
                         provider_response=provider_meta,
+                        category=category,
                     )
 
                     metadata_json = json.dumps(metadata, indent=2, ensure_ascii=False)
@@ -261,6 +268,7 @@ if st.button("Generate", type="primary", use_container_width=True):
                                 images=images,
                                 metadata_json=metadata_json,
                                 reasoning_text=reasoning_text,
+                                category=category,
                             )
                         except Exception as save_err:
                             st.warning(f"Could not save to disk: {save_err}")

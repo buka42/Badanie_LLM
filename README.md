@@ -120,17 +120,21 @@ podfolderu w katalogu wyników (domyślnie `results/`, konfigurowalny przez
 
 ```
 results/
-└── OpenAI_img_20260630_084723/
-    ├── OpenAI_img_20260630_084723.png    ← obraz
-    ├── OpenAI_img_20260630_084723.json   ← metadane
-    └── OpenAI_img_20260630_084723.txt    ← reasoning + prompt (tylko w trybie thinking)
+└── political_event_chatgpt_img_20260630_084723/
+    ├── political_event_chatgpt_img_20260630_084723.png    ← obraz
+    ├── political_event_chatgpt_img_20260630_084723.json   ← metadane
+    └── political_event_chatgpt_img_20260630_084723.txt    ← reasoning + prompt (tylko w trybie thinking)
 ```
 
 - Bez trybu reasoning powstają **2 pliki** (obraz + JSON).
 - Z trybem reasoning powstają **3 pliki** (dochodzi `.txt` z podsumowaniem
   rozumowania i użytym promptem).
-- Wszystkie pliki mają tę samą nazwę bazową, poprzedzoną prefiksem dostawcy:
-  **`OpenAI_`**, **`Gemini_`** lub **`Grok_`**.
+- Wszystkie pliki mają tę samą nazwę bazową, poprzedzoną prefiksem
+  **`<kategoria>_<dostawca>`**, gdzie dostawca to **`chatgpt`**, **`gemini`**
+  lub **`grok`**.
+- **Kategoria** jest opcjonalna — wpisujesz ją w panelu bocznym (sekcja
+  💾 Output). Spacje są zamieniane na `_`. Gdy nie podasz kategorii, nazwa
+  zaczyna się od dostawcy (np. `chatgpt_img_...`).
 - Przy kilku obrazach w jednej generacji pliki obrazów są numerowane (`_1`, `_2`, …).
 
 > Katalog `results/` jest w `.gitignore`, więc wyniki nie trafiają do repozytorium.
