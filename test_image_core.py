@@ -6,6 +6,7 @@ network access. Fake response objects mimic the OpenAI Responses API shape.
 """
 
 import base64
+import os
 import struct
 from types import SimpleNamespace
 
@@ -219,3 +220,61 @@ def test_as_dict_handles_model_dump():
 
 def test_as_dict_none():
     assert core._as_dict(None) is None
+
+
+# --- Saving generations to disk ---
+def test_provider_prefix():
+    assert core.provider_prefix("OpenAI") == "OpenAI"
+    assert core.provider_prefix("Gemini (Google)") == "Gemini"
+    assert core.provider_prefix("Grok (xAI)") == "Grok"
+    assert core.provider_prefix("Unknown") == "Model"
+
+
+def test_sanitize():
+    assert core._sanitize("a b/c:d") == "a_b_c_d"
+    assert core._sanitize("") == "image"
+
+
+def test_save_generation_with_reasoning(tmp_path):
+    png = _make_png(10, 10)
+    res = core.save_generation(
+        results_dir=str(tmp_path), provider="OpenAI", base_name="img_x",
+        images=[png], metadata_json='{"a": 1}', reasoning_text="thoughts here",
+    )
+    assert os.path.basename(res["folder"]) == "OpenAI_img_x"
+    names = sorted(os.path.basename(p) for p in res["files"])
+    assert names == ["OpenAI_img_x.json", "OpenAI_img_x.png", "OpenAI_img_x.txt"]
+
+    folder = res["folder"]
+    with open(os.path.join(folder, "OpenAI_img_x.txt"), encoding="utf-8") as f:
+        assert f.read() == "thoughts here"
+    with open(os.path.join(folder, "OpenAI_img_x.json"), encoding="utf-8") as f:
+        assert f.read() == '{"a": 1}'
+    with open(os.path.join(folder, "OpenAI_img_x.png"), "rb") as f:
+        assert f.read() == png
+
+
+def test_save_generation_without_reasoning(tmp_path):
+    png = _make_png(4, 4)
+    res = core.save_generation(
+        results_dir=str(tmp_path), provider="Grok (xAI)", base_name="g1",
+        images=[png], metadata_json="{}",
+    )
+    names = sorted(os.path.basename(p) for p in res["files"])
+    assert names == ["Grok_g1.json", "Grok_g1.png"]
+
+
+def test_save_generation_multiple_images(tmp_path):
+    res = core.save_generation(
+        results_dir=str(tmp_path), provider="Gemini (Google)", base_name="m",
+        images=[_make_png(2, 2), _make_png(3, 3)], metadata_json="{}",
+    )
+    names = sorted(os.path.basename(p) for p in res["files"])
+    assert names == ["Gemini_m.json", "Gemini_m_1.png", "Gemini_m_2.png"]
+
+
+def test_get_results_dir_env(monkeypatch):
+    monkeypatch.delenv("RESULTS_DIR", raising=False)
+    assert core.get_results_dir() == "results"
+    monkeypatch.setenv("RESULTS_DIR", "out")
+    assert core.get_results_dir() == "out"

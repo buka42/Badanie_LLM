@@ -6,6 +6,7 @@ inside the functions that need it. The API keys never leave this layer.
 """
 
 import os
+import re
 import base64
 import struct
 import urllib.request
@@ -347,3 +348,78 @@ def build_metadata(*, prompt, provider, model, parameters, images,
         "provider_response": provider_response or {},
         "not_available_from_api": BROWSER_ONLY_FIELDS,
     }
+
+
+# --- Saving generations to disk ---
+PROVIDER_PREFIX = {
+    "OpenAI": "OpenAI",
+    "Gemini (Google)": "Gemini",
+    "Grok (xAI)": "Grok",
+}
+
+_EXT_BY_TYPE = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def get_results_dir() -> str:
+    """Main output directory, configurable via RESULTS_DIR (default 'results')."""
+    return os.getenv("RESULTS_DIR") or "results"
+
+
+def provider_prefix(provider: str) -> str:
+    """Filename prefix for a provider: OpenAI / Gemini / Grok."""
+    return PROVIDER_PREFIX.get(provider, "Model")
+
+
+def _sanitize(name: str) -> str:
+    cleaned = _UNSAFE_RE.sub("_", str(name)).strip("._")
+    return cleaned or "image"
+
+
+def _ext_for(data: bytes) -> str:
+    return _EXT_BY_TYPE.get(_content_type(data), ".bin")
+
+
+def save_generation(results_dir, provider, base_name, images, metadata_json,
+                    reasoning_text=None):
+    """Write one generation into ``results_dir/<Prefix>_<base_name>/``.
+
+    Files share the image base name, each prefixed with the provider:
+      - ``<Prefix>_<base>.<ext>`` for the image(s) (indexed when >1),
+      - ``<Prefix>_<base>.json`` for the metadata,
+      - ``<Prefix>_<base>.txt`` for reasoning (only when ``reasoning_text`` set).
+
+    Returns ``{"folder": <path>, "files": [<path>, ...]}``.
+    """
+    prefix = provider_prefix(provider)
+    safe_base = _sanitize(base_name)
+    stem = f"{prefix}_{safe_base}"
+    folder = os.path.join(results_dir, stem)
+    os.makedirs(folder, exist_ok=True)
+
+    written = []
+    for i, img in enumerate(images):
+        suffix = "" if len(images) == 1 else f"_{i + 1}"
+        path = os.path.join(folder, f"{stem}{suffix}{_ext_for(img)}")
+        with open(path, "wb") as f:
+            f.write(img)
+        written.append(path)
+
+    json_path = os.path.join(folder, f"{stem}.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(metadata_json)
+    written.append(json_path)
+
+    if reasoning_text is not None:
+        txt_path = os.path.join(folder, f"{stem}.txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(reasoning_text)
+        written.append(txt_path)
+
+    return {"folder": folder, "files": written}

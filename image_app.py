@@ -114,6 +114,16 @@ with st.sidebar:
             if default_effort in core.REASONING_EFFORTS else 1,
         )
 
+    # --- Output: auto-save to disk (on by default) ---
+    st.divider()
+    st.subheader("💾 Output")
+    save_to_disk = st.checkbox(
+        "Auto-save results to disk",
+        value=True,
+        help=f"Saves each generation into its own subfolder of '{core.get_results_dir()}/' "
+             "(image + JSON, plus a reasoning .txt when thinking mode is on).",
+    )
+
 # Resolve the actual model id to send.
 active_model = custom_model or model
 
@@ -216,15 +226,48 @@ if st.button("Generate", type="primary", use_container_width=True):
                         provider_response=provider_meta,
                     )
 
+                    metadata_json = json.dumps(metadata, indent=2, ensure_ascii=False)
+
                     st.session_state["images"] = images
                     st.session_state["last_prompt"] = image_prompt
                     st.session_state["reasoning_summary"] = reasoning_summary
                     st.session_state["thinking_used"] = bool(thinking_mode)
-                    st.session_state["metadata_json"] = json.dumps(
-                        metadata, indent=2, ensure_ascii=False)
+                    st.session_state["metadata_json"] = metadata_json
+                    st.session_state["saved_info"] = None
+
+                    # Auto-save the whole generation to disk.
+                    if save_to_disk:
+                        created = (provider_meta or {}).get("created")
+                        if isinstance(created, (int, float)):
+                            base_name = datetime.fromtimestamp(
+                                created, timezone.utc).strftime("img_%Y%m%d_%H%M%S")
+                        else:
+                            base_name = datetime.now(timezone.utc).strftime("img_%Y%m%d_%H%M%S")
+
+                        reasoning_text = None
+                        if thinking_mode:
+                            reasoning_text = (
+                                "=== Reasoning summary ===\n"
+                                + (reasoning_summary
+                                   or "No reasoning summary available for this response.")
+                                + "\n\n=== Final prompt used ===\n" + image_prompt
+                                + "\n\n=== Original prompt ===\n" + prompt + "\n"
+                            )
+                        try:
+                            st.session_state["saved_info"] = core.save_generation(
+                                results_dir=core.get_results_dir(),
+                                provider=provider,
+                                base_name=base_name,
+                                images=images,
+                                metadata_json=metadata_json,
+                                reasoning_text=reasoning_text,
+                            )
+                        except Exception as save_err:
+                            st.warning(f"Could not save to disk: {save_err}")
                 except Exception as e:
                     st.session_state["images"] = []
                     st.session_state["metadata_json"] = None
+                    st.session_state["saved_info"] = None
                     st.error(core.friendly_error(e))
 
 # --- Render results (kept in session_state so downloads don't clear them) ---
@@ -267,3 +310,11 @@ if images:
         )
         with st.expander("Preview metadata"):
             st.code(metadata_json, language="json")
+
+    # Where the generation was saved on disk.
+    saved = st.session_state.get("saved_info")
+    if saved:
+        st.success(f"💾 Saved to: `{saved['folder']}`")
+        with st.expander("Saved files"):
+            for path in saved["files"]:
+                st.write(f"- {os.path.basename(path)}")
