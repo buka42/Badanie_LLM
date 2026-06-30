@@ -23,7 +23,7 @@ except ImportError:  # pragma: no cover - depends on optional dependency
 # --- Configuration ---
 PROVIDERS = {
     "OpenAI": {
-        "models": ["gpt-image-2"],
+        "models": ["gpt-image-2", "dall-e-3", "dall-e-2"],
         "api_key_env": "OPENAI_API_KEY",
     },
     "Gemini (Google)": {
