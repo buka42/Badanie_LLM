@@ -24,7 +24,7 @@ except ImportError:  # pragma: no cover - depends on optional dependency
 # Bump this when changing behaviour so users can confirm they run the latest
 # file (shown at the bottom of the sidebar). If you don't see it, your local
 # copy is stale.
-APP_BUILD = "2026-06-30.7 (no response_format)"
+APP_BUILD = "2026-06-30.8 (gemini reasoning)"
 
 PROVIDERS = {
     "OpenAI": {
@@ -46,8 +46,10 @@ PROVIDERS = {
 }
 
 DEFAULT_THINKING_MODEL = "gpt-5.5"
+DEFAULT_GEMINI_THINKING_MODEL = "gemini-2.5-flash"
 DEFAULT_REASONING_EFFORT = "medium"
 REASONING_EFFORTS = ["low", "medium", "high"]
+REASONING_ENGINES = ["OpenAI", "Gemini (Google)"]
 
 # Instruction for the reasoning model. It returns ONLY the final image prompt;
 # the reasoning summary is read separately from the Responses API output.
@@ -62,6 +64,11 @@ _PROMPT_ENGINEER_INSTRUCTION = (
 def get_thinking_model() -> str:
     """Reasoning model id, configurable via OPENAI_THINKING_MODEL."""
     return os.getenv("OPENAI_THINKING_MODEL") or DEFAULT_THINKING_MODEL
+
+
+def get_gemini_thinking_model() -> str:
+    """Gemini reasoning model id, configurable via GEMINI_THINKING_MODEL."""
+    return os.getenv("GEMINI_THINKING_MODEL") or DEFAULT_GEMINI_THINKING_MODEL
 
 
 def get_reasoning_effort() -> str:
@@ -231,6 +238,57 @@ def refine_image_prompt(api_key, user_prompt, model=None, effort=None,
     final_text = (getattr(response, "output_text", None) or "").strip()
     summary = extract_reasoning_summary(response)
     return final_text, summary
+
+
+def _effort_to_thinking_budget(effort) -> int:
+    """Map the shared low/medium/high effort to a Gemini thinking budget.
+
+    ``-1`` lets the model decide dynamically (default for unknown values).
+    """
+    return {"low": 1024, "medium": 4096, "high": 12288}.get(effort, -1)
+
+
+def parse_gemini_thoughts(response):
+    """Split a Gemini response into (final_text, thought_summary).
+
+    Parts flagged with ``thought=True`` are the official thought summary;
+    the rest form the answer. Raw chain-of-thought is never exposed.
+    """
+    summary_parts, answer_parts = [], []
+    for cand in getattr(response, "candidates", None) or []:
+        content = getattr(cand, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            text = getattr(part, "text", None)
+            if not text:
+                continue
+            if getattr(part, "thought", False):
+                summary_parts.append(text)
+            else:
+                answer_parts.append(text)
+    return "\n".join(answer_parts).strip(), "\n\n".join(summary_parts).strip()
+
+
+def refine_image_prompt_gemini(api_key, user_prompt, model=None, effort=None,
+                               client=None):
+    """Gemini equivalent of ``refine_image_prompt`` using thinking models.
+
+    Returns ``(final_prompt, thought_summary)``. ``client`` may be injected for
+    testing; otherwise a genai client is built lazily.
+    """
+    if client is None:
+        client = genai.Client(api_key=api_key)
+    budget = _effort_to_thinking_budget(effort or get_reasoning_effort())
+    response = client.models.generate_content(
+        model=model or get_gemini_thinking_model(),
+        contents=f"{_PROMPT_ENGINEER_INSTRUCTION}\n\nUser idea: {user_prompt}",
+        config={
+            "thinking_config": {
+                "include_thoughts": True,
+                "thinking_budget": budget,
+            }
+        },
+    )
+    return parse_gemini_thoughts(response)
 
 
 def friendly_error(e: Exception) -> str:

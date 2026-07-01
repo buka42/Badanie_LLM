@@ -59,23 +59,31 @@ OPENAI_REASONING_EFFORT=medium
 
 ---
 
-## Opcjonalny tryb „OpenAI thinking / reasoning” (generator obrazów)
+## Opcjonalny tryb „thinking / reasoning” (generator obrazów)
 
 W `image_app.py` w panelu bocznym (sekcja **🧠 Reasoning**) możesz włączyć
 opcjonalny tryb rozumowania. **Domyślnie jest wyłączony** — bez niego aplikacja
 działa dokładnie tak jak dotychczas.
 
-Po zaznaczeniu pola **„OpenAI thinking / reasoning”**:
-- model rozumujący OpenAI (Responses API) najpierw dopracowuje Twój prompt,
-- obraz jest generowany na podstawie dopracowanego promptu,
+Po zaznaczeniu **„Enable thinking / reasoning”** wybierasz **silnik rozumowania**:
+
+- **OpenAI** — model rozumujący przez Responses API (`reasoning.summary`),
+  wymaga `OPENAI_API_KEY`, konfigurowalny przez `OPENAI_THINKING_MODEL`
+  (domyślnie `gpt-5.5`).
+- **Gemini (Google)** — model „thinking” (np. `gemini-2.5-flash`) zwracający
+  podsumowanie myślenia (`include_thoughts`), wymaga `GEMINI_API_KEY`,
+  konfigurowalny przez `GEMINI_THINKING_MODEL` (domyślnie `gemini-2.5-flash`).
+
+Niezależnie od silnika:
+- model najpierw dopracowuje Twój prompt,
+- obraz jest generowany na podstawie dopracowanego promptu (u dowolnego dostawcy),
 - pod obrazem pojawia się sekcja **„Reasoning summary”** z oficjalnym
   podsumowaniem rozumowania i przyciskiem **Kopiuj**.
 
-Tryb ten jest **wolniejszy i droższy**, wymaga `OPENAI_API_KEY` i jest
-konfigurowalny przez `OPENAI_THINKING_MODEL` (domyślnie `gpt-5.5`) oraz
-`OPENAI_REASONING_EFFORT` (`low` / `medium` / `high`, domyślnie `medium`).
-Wyświetlane jest wyłącznie oficjalne `reasoning.summary` zwrócone przez API —
-nigdy surowy tok rozumowania (OpenAI go nie udostępnia).
+Tryb jest **wolniejszy i droższy**. Poziom `effort` (`low` / `medium` / `high`,
+domyślnie z `OPENAI_REASONING_EFFORT`) steruje głębokością rozumowania — dla
+Gemini jest mapowany na budżet myślenia (thinking budget). Wyświetlane jest
+wyłącznie oficjalne podsumowanie — nigdy surowy tok rozumowania.
 
 ---
 

@@ -142,6 +142,90 @@ def test_refine_image_prompt_uses_env_defaults(monkeypatch):
     assert captured["reasoning"]["effort"] == "low"
 
 
+# --- Gemini reasoning ---
+def test_gemini_thinking_model_default(monkeypatch):
+    monkeypatch.delenv("GEMINI_THINKING_MODEL", raising=False)
+    assert core.get_gemini_thinking_model() == "gemini-2.5-flash"
+
+
+def test_gemini_thinking_model_env_override(monkeypatch):
+    monkeypatch.setenv("GEMINI_THINKING_MODEL", "gemini-x")
+    assert core.get_gemini_thinking_model() == "gemini-x"
+
+
+def test_effort_to_thinking_budget():
+    assert core._effort_to_thinking_budget("low") == 1024
+    assert core._effort_to_thinking_budget("medium") == 4096
+    assert core._effort_to_thinking_budget("high") == 12288
+    assert core._effort_to_thinking_budget("unknown") == -1
+
+
+def _gemini_response(thought_texts, answer_texts):
+    parts = [SimpleNamespace(text=t, thought=True) for t in thought_texts]
+    parts += [SimpleNamespace(text=t, thought=False) for t in answer_texts]
+    return SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=parts))]
+    )
+
+
+def test_parse_gemini_thoughts():
+    resp = _gemini_response(["planning the scene"], ["a vivid final prompt"])
+    final, summary = core.parse_gemini_thoughts(resp)
+    assert final == "a vivid final prompt"
+    assert summary == "planning the scene"
+
+
+def test_parse_gemini_thoughts_no_thoughts():
+    resp = _gemini_response([], ["only answer"])
+    final, summary = core.parse_gemini_thoughts(resp)
+    assert final == "only answer"
+    assert summary == ""
+
+
+class _FakeGeminiModels:
+    def __init__(self, response, captured):
+        self._response = response
+        self._captured = captured
+
+    def generate_content(self, **kwargs):
+        self._captured.update(kwargs)
+        return self._response
+
+
+class _FakeGeminiClient:
+    def __init__(self, response, captured):
+        self.models = _FakeGeminiModels(response, captured)
+
+
+def test_refine_image_prompt_gemini():
+    captured = {}
+    resp = _gemini_response(["considered composition"], ["  a detailed prompt  "])
+    client = _FakeGeminiClient(resp, captured)
+
+    final, summary = core.refine_image_prompt_gemini(
+        "key", "a cat", model="gemini-2.5-flash", effort="high", client=client
+    )
+
+    assert final == "a detailed prompt"  # trimmed
+    assert summary == "considered composition"
+    assert captured["model"] == "gemini-2.5-flash"
+    tc = captured["config"]["thinking_config"]
+    assert tc["include_thoughts"] is True
+    assert tc["thinking_budget"] == 12288  # high
+    assert "a cat" in captured["contents"]
+
+
+def test_refine_image_prompt_gemini_uses_env_defaults(monkeypatch):
+    monkeypatch.setenv("GEMINI_THINKING_MODEL", "gemini-custom")
+    monkeypatch.setenv("OPENAI_REASONING_EFFORT", "low")
+    captured = {}
+    client = _FakeGeminiClient(_gemini_response([], ["x"]), captured)
+
+    core.refine_image_prompt_gemini("key", "y", client=client)
+    assert captured["model"] == "gemini-custom"
+    assert captured["config"]["thinking_config"]["thinking_budget"] == 1024  # low
+
+
 # --- Friendly error messages ---
 def test_friendly_error_missing_model():
     msg = core.friendly_error(Exception("The model `gpt-5.5` does not exist"))

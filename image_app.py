@@ -97,16 +97,22 @@ with st.sidebar:
     st.divider()
     st.subheader("🧠 Reasoning (optional)")
     thinking_mode = st.checkbox(
-        "OpenAI thinking / reasoning",
+        "Enable thinking / reasoning",
         value=False,
-        help="Uses an OpenAI reasoning model to craft a more detailed prompt before "
-             "generating the image. More accurate, but slower and more expensive. "
-             "Requires OPENAI_API_KEY.",
+        help="Uses a reasoning model to craft a more detailed prompt before "
+             "generating the image. More accurate, but slower and more expensive.",
     )
     default_effort = core.get_reasoning_effort()
     effort = default_effort
+    reasoning_engine = "OpenAI"
     if thinking_mode:
-        st.caption("⚠️ Slower & more expensive — uses `OPENAI_API_KEY` to refine the prompt first.")
+        reasoning_engine = st.selectbox(
+            "Reasoning engine",
+            core.REASONING_ENGINES,
+            help="OpenAI uses OPENAI_API_KEY; Gemini uses GEMINI_API_KEY.",
+        )
+        key_env = "OPENAI_API_KEY" if reasoning_engine == "OpenAI" else "GEMINI_API_KEY"
+        st.caption(f"⚠️ Slower & more expensive — uses `{key_env}` to refine the prompt first.")
         effort = st.selectbox(
             "Reasoning effort",
             core.REASONING_EFFORTS,
@@ -166,25 +172,39 @@ if st.button("Generate", type="primary", use_container_width=True):
         reasoning_summary = ""
         think_seconds = None
 
-        # Optional thinking step: refine the prompt with an OpenAI reasoning model.
-        # Failures here are reported but never break the standard generation flow.
+        # Optional thinking step: refine the prompt with a reasoning model
+        # (OpenAI or Gemini). Failures are reported but never break the
+        # standard generation flow.
         if thinking_mode:
-            openai_key = os.getenv("OPENAI_API_KEY")
-            if not openai_key:
-                st.error("🧠 OpenAI thinking mode requires `OPENAI_API_KEY` in your `.env` file. "
-                         "Uncheck it to use the standard mode.")
+            if reasoning_engine == "OpenAI":
+                reasoning_key = os.getenv("OPENAI_API_KEY")
+                reasoning_key_env = "OPENAI_API_KEY"
+            else:
+                reasoning_key = os.getenv("GEMINI_API_KEY")
+                reasoning_key_env = "GEMINI_API_KEY"
+
+            if reasoning_engine == "Gemini (Google)" and not core.GENAI_AVAILABLE:
+                st.error("🧠 Gemini reasoning requires the `google-genai` package. "
+                         "Run: `pip install google-genai`")
+                proceed = False
+            elif not reasoning_key:
+                st.error(f"🧠 {reasoning_engine} reasoning requires `{reasoning_key_env}` in your "
+                         "`.env` file. Uncheck reasoning to use the standard mode.")
                 proceed = False
             else:
                 with st.spinner("🧠 Thinking about the best prompt…"):
                     t0 = time.monotonic()
                     try:
-                        refined, reasoning_summary = core.refine_image_prompt(
-                            openai_key, prompt, effort=effort
-                        )
+                        if reasoning_engine == "OpenAI":
+                            refined, reasoning_summary = core.refine_image_prompt(
+                                reasoning_key, prompt, effort=effort)
+                        else:
+                            refined, reasoning_summary = core.refine_image_prompt_gemini(
+                                reasoning_key, prompt, effort=effort)
                         image_prompt = refined or prompt
                         think_seconds = round(time.monotonic() - t0, 2)
                     except Exception as e:
-                        st.error("🧠 OpenAI thinking failed: " + core.friendly_error(e))
+                        st.error(f"🧠 {reasoning_engine} thinking failed: " + core.friendly_error(e))
                         proceed = False
 
         if proceed:
@@ -210,9 +230,13 @@ if st.button("Generate", type="primary", use_container_width=True):
                         parameters["aspect_ratio"] = aspect_ratio
 
                     if thinking_mode:
+                        reasoning_model = (core.get_thinking_model()
+                                           if reasoning_engine == "OpenAI"
+                                           else core.get_gemini_thinking_model())
                         reasoning_meta = {
                             "enabled": True,
-                            "model": core.get_thinking_model(),
+                            "engine": reasoning_engine,
+                            "model": reasoning_model,
                             "effort": effort,
                             "summary": reasoning_summary or None,
                             "summary_available": bool(reasoning_summary),
